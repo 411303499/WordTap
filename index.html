@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WordTap 點字讀</title>
+<meta name="description" content="匯入英文文章或小說，點單字查中文、詞性、英文解釋與發音，依前後文推測意思，收進單字本複習。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap" rel="stylesheet">
+<style>
+/* ========== 配色（規格書第五節） ========== */
+:root {
+  --bg: #F7F1E3;
+  --paper: #FBF7EE;
+  --text: #3B3024;
+  --muted: #8A7B66;
+  --line: #E6DCC6;
+  --accent: #4A6B57;
+  --accent-text: #FFFFFF;
+  --accent-soft: #E3EBE4;
+  --mark: #F3E3A3;
+  --danger: #B5533C;
+  --good: #3F7D52;
+  --shadow: 0 8px 28px rgba(59, 48, 36, .14);
+  --fs: 19px;
+  --lh: 1.85;
+  --ff-read: 'Literata', 'Noto Serif TC', Georgia, serif;
+  --ff-ui: 'Inter', -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+}
+[data-theme="dark"] {
+  --bg: #1E1E1E;
+  --paper: #262523;
+  --text: #DDD5C7;
+  --muted: #9A9182;
+  --line: #3A3835;
+  --accent: #8DB79A;
+  --accent-text: #1E1E1E;
+  --accent-soft: #2F3A32;
+  --mark: #5A4E25;
+  --danger: #E08A73;
+  --good: #8DB79A;
+  --shadow: 0 8px 28px rgba(0, 0, 0, .45);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--ff-ui);
+  transition: background .2s, color .2s;
+  -webkit-tap-highlight-color: transparent;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+[hidden] { display: none !important; }
+
+/* ========== F16 進度條 ========== */
+#progress {
+  position: fixed; top: 0; left: 0; height: 3px; width: 0;
+  background: var(--accent); z-index: 60; transition: width .1s linear;
+}
+
+/* ========== 導覽列 ========== */
+header {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.nav {
+  max-width: 980px; margin: 0 auto; padding: 10px 16px;
+  display: flex; align-items: center; gap: 12px;
+}
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 17px; white-space: nowrap; }
+.brand-mark {
+  width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: var(--accent-text);
+  display: grid; place-items: center; font-family: var(--ff-read); font-size: 16px;
+}
+.brand small { font-weight: 400; color: var(--muted); font-size: 13px; }
+.tabs { display: flex; gap: 4px; margin: 0 auto; background: var(--paper); padding: 4px; border-radius: 12px; border: 1px solid var(--line); }
+.tab {
+  border: 0; background: transparent; padding: 7px 16px; border-radius: 9px; font-size: 14px; color: var(--muted);
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.tab.active { background: var(--accent); color: var(--accent-text); }
+.tab .count { font-size: 11px; background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 1px 6px; }
+.tab.active .count { background: rgba(255,255,255,.25); color: inherit; }
+.tools { display: flex; gap: 6px; }
+.icon-btn {
+  width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--paper); display: grid; place-items: center; font-size: 15px; flex-shrink: 0;
+}
+.icon-btn:hover { border-color: var(--accent); }
+.icon-btn svg { width: 18px; height: 18px; }
+
+/* ========== 共用 ========== */
+main { max-width: 980px; margin: 0 auto; padding: 0 16px 80px; }
+.view { display: none; animation: fade .2s ease; }
+.view.active { display: block; }
+@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.btn {
+  border: 1px solid var(--line); background: var(--paper); border-radius: 10px;
+  padding: 10px 18px; font-size: 15px; white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.07); }
+.btn.small { padding: 6px 12px; font-size: 13px; }
+.btn.danger { color: var(--danger); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.hint { color: var(--muted); font-size: 14px; }
+.empty { color: var(--muted); text-align: center; padding: 50px 0; font-family: var(--ff-ui); line-height: 1.8; }
+h2 { font-size: 22px; margin: 0; }
+
+/* ========== 閱讀區 ========== */
+.reader-wrap { max-width: 680px; margin: 0 auto; padding-top: 24px; }
+.reader-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; color: var(--muted); font-size: 13px;
+  padding-bottom: 14px; margin-bottom: 24px; border-bottom: 1px dashed var(--line);
+}
+.reader-meta .book { color: var(--text); font-weight: 600; font-size: 14px; }
+.reader-meta .link { margin-left: auto; color: var(--accent); background: none; border: 0; padding: 0; font-size: 13px; }
+#reader {
+  font-family: var(--ff-read); font-size: var(--fs); line-height: var(--lh);
+  overflow-wrap: break-word;
+}
+#reader.sans { font-family: var(--ff-ui); }
+#reader p { margin: 0 0 1.1em; }
+#reader p.title { font-weight: 600; font-size: 1.25em; line-height: 1.4; }
+.w { cursor: pointer; border-radius: 3px; transition: background .15s; }
+.w:hover { background: var(--accent-soft); }
+.w.saved { background: var(--mark); }
+.w.current { background: var(--accent); color: var(--accent-text); }
+
+/* ========== F5–F6 查字小視窗 ========== */
+#pop {
+  position: absolute; z-index: 70; width: 360px; max-width: calc(100vw - 24px);
+  max-height: 72vh; overflow-y: auto;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow); padding: 16px; display: none;
+}
+#pop.show { display: block; animation: fade .15s ease; }
+.pop-head { display: flex; align-items: flex-start; gap: 8px; }
+.pop-word { font-family: var(--ff-read); font-size: 24px; font-weight: 600; line-height: 1.2; }
+.pop-phon { color: var(--muted); font-size: 13px; margin-top: 2px; min-height: 16px; }
+.pop-head .spacer { flex: 1; }
+.pop-head .icon-btn { width: 34px; height: 34px; }
+.pop-sec { margin-top: 12px; }
+.label { display: inline-block; font-size: 11px; letter-spacing: .05em; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 2px 7px; margin-bottom: 5px; }
+.guess {
+  border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 10px; padding: 9px 12px;
+}
+.guess .label { background: var(--accent); color: var(--accent-text); }
+.guess-main { font-size: 19px; font-weight: 600; }
+.guess-note { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.mean { font-size: 15px; line-height: 1.6; margin: 3px 0; }
+.pos { display: inline-block; min-width: 46px; font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; margin-right: 6px; text-align: center; }
+.mean b { color: var(--accent); }
+.sent { font-family: var(--ff-read); font-size: 14px; line-height: 1.55; color: var(--muted); }
+.sent mark { background: var(--mark); color: var(--text); border-radius: 3px; padding: 0 1px; }
+.sent-zh { font-size: 14px; line-height: 1.55; margin-top: 4px; }
+.pop-en { font-size: 14px; line-height: 1.55; }
+.pop-en .def { margin: 4px 0; }
+.pop-en i { color: var(--muted); margin-right: 4px; }
+.small-link { font-size: 13px; color: var(--accent); }
+.src { font-size: 11px; color: var(--muted); margin-left: 6px; font-weight: 400; }
+.loading { color: var(--muted); font-size: 14px; }
+.loading::after { content: '…'; animation: dots 1s steps(3) infinite; }
+@keyframes dots { 0% { content: '.'; } 33% { content: '..'; } 66% { content: '...'; } }
+.err { color: var(--danger); font-size: 14px; }
+.pop-actions { margin-top: 14px; display: flex; gap: 8px; position: sticky; bottom: -16px; background: var(--paper); padding: 8px 0 0; }
+.pop-actions .btn { flex: 1; padding: 9px 12px; font-size: 14px; }
+
+/* ========== F1–F4 書架 ========== */
+.shelf-wrap, .vocab-wrap { max-width: 760px; margin: 28px auto 0; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.row .grow { flex: 1; }
+.import-box {
+  margin: 16px 0 22px; padding: 18px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  animation: fade .2s ease;
+}
+.field { width: 100%; padding: 11px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 15px; }
+.field:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+textarea {
+  width: 100%; min-height: 240px; margin: 10px 0; padding: 14px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text);
+  font-family: var(--ff-read); font-size: 15px; line-height: 1.7; resize: vertical;
+}
+.drop { border: 2px dashed var(--accent) !important; }
+#fileInput { display: none; }
+.book {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px;
+  margin-bottom: 12px; display: flex; gap: 16px; align-items: center;
+}
+.book.current { border-color: var(--accent); }
+.book-cover {
+  width: 46px; height: 62px; border-radius: 4px 8px 8px 4px; flex-shrink: 0;
+  background: var(--accent); color: var(--accent-text); display: grid; place-items: center;
+  font-family: var(--ff-read); font-size: 22px; font-weight: 600; box-shadow: inset 4px 0 0 rgba(0,0,0,.15);
+}
+.book-main { flex: 1; min-width: 0; }
+.book-title { font-family: var(--ff-read); font-size: 18px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.book-meta { font-size: 13px; color: var(--muted); margin-top: 3px; }
+.badge { font-size: 11px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; font-family: var(--ff-ui); font-weight: 500; }
+.mini-bar { height: 4px; background: var(--line); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+.mini-bar div { height: 100%; background: var(--accent); }
+.book-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ========== F9–F11 單字本 ========== */
+.vocab-top { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 16px 0; }
+.select { padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); font-size: 14px; max-width: 100%; }
+.filters { display: flex; gap: 4px; background: var(--paper); padding: 4px; border-radius: 10px; border: 1px solid var(--line); }
+.filter { border: 0; background: transparent; padding: 6px 12px; border-radius: 7px; font-size: 14px; color: var(--muted); }
+.filter.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.vocab-top .grow { flex: 1; }
+.card {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px 16px; margin-bottom: 10px; display: flex; gap: 12px; align-items: flex-start;
+  transition: opacity .2s;
+}
+.card.done { opacity: .6; }
+.card-main { flex: 1; min-width: 0; }
+.card-word { font-family: var(--ff-read); font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.card-word .icon-btn { width: 28px; height: 28px; border-radius: 8px; }
+.card-word .icon-btn svg { width: 14px; height: 14px; }
+.card-zh { margin-top: 3px; font-size: 16px; }
+.card-other { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.card-en { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.card-sent { margin-top: 8px; padding-left: 10px; border-left: 3px solid var(--line); }
+.card-from { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.card-side { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.check { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; user-select: none; white-space: nowrap; }
+.check input { width: 17px; height: 17px; accent-color: var(--accent); }
+.del { border: 0; background: transparent; color: var(--danger); font-size: 13px; padding: 2px 0; }
+
+/* ========== F12 測驗 ========== */
+.modal-bg {
+  position: fixed; inset: 0; background: rgba(30, 24, 18, .45); z-index: 80;
+  display: none; place-items: center; padding: 16px;
+}
+.modal-bg.show { display: grid; }
+.modal {
+  width: 100%; max-width: 440px; background: var(--paper); border-radius: 16px;
+  box-shadow: var(--shadow); padding: 24px; animation: fade .2s ease;
+}
+.quiz-top { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; gap: 10px; }
+.quiz-bar { height: 4px; background: var(--line); border-radius: 4px; margin: 10px 0 20px; overflow: hidden; }
+.quiz-bar div { height: 100%; background: var(--accent); transition: width .3s; }
+.quiz-word { font-family: var(--ff-read); font-size: 34px; font-weight: 600; text-align: center; display: flex; justify-content: center; align-items: center; gap: 10px; }
+.quiz-q { text-align: center; color: var(--muted); font-size: 14px; margin: 6px 0 18px; }
+.opt {
+  display: block; width: 100%; text-align: left; margin-bottom: 8px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 16px;
+}
+.opt:hover:not(:disabled) { border-color: var(--accent); }
+.opt:disabled { cursor: default; }
+.opt.right { border-color: var(--good); background: var(--accent-soft); font-weight: 600; }
+.opt.wrong { border-color: var(--danger); color: var(--danger); }
+.quiz-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 10px; }
+.result { text-align: center; }
+.result .big { font-size: 46px; font-family: var(--ff-read); font-weight: 600; color: var(--accent); }
+
+/* ========== F13–F16 設定面板 ========== */
+#panel {
+  position: fixed; top: 0; right: 0; height: 100%; width: 300px; max-width: 86vw;
+  background: var(--paper); border-left: 1px solid var(--line); box-shadow: var(--shadow);
+  z-index: 75; padding: 22px; transform: translateX(105%); transition: transform .2s ease;
+}
+#panel.show { transform: none; }
+#panel h3 { margin: 0 0 18px; display: flex; justify-content: space-between; align-items: center; font-size: 18px; }
+.set-row { margin-bottom: 20px; }
+.set-row .name { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg button { flex: 1; border: 0; background: transparent; padding: 9px 4px; font-size: 14px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.active { background: var(--accent); color: var(--accent-text); }
+.seg .serif { font-family: var(--ff-read); }
+
+/* ========== 提示訊息 ========== */
+#toast {
+  position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px);
+  background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 10px;
+  font-size: 14px; opacity: 0; pointer-events: none; transition: all .2s; z-index: 90; max-width: calc(100vw - 32px);
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ========== 手機版 ========== */
+@media (max-width: 640px) {
+  .brand small, .brand .name { display: none; }
+  .nav { gap: 8px; padding: 8px 12px; }
+  .tab { padding: 7px 10px; }
+  .tab .count { display: none; }
+  .icon-btn { width: 36px; height: 36px; }
+  .reader-wrap { padding-top: 16px; }
+  #pop {
+    position: fixed; left: 0 !important; right: 0; bottom: 0; top: auto !important;
+    width: 100%; max-width: none; max-height: 75vh; border-radius: 16px 16px 0 0; padding-bottom: 20px;
+  }
+  .book { flex-wrap: wrap; }
+  .book-actions { width: 100%; }
+  .book-actions .btn { flex: 1; }
+  .card { flex-direction: column; }
+  .card-side { flex-direction: row; align-items: center; justify-content: space-between; width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+
+<header>
+  <nav class="nav">
+    <div class="brand"><div class="brand-mark">W</div><span class="name">WordTap</span><small>點字讀</small></div>
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-view="read">閱讀</button>
+      <button class="tab" data-view="shelf">書架 <span class="count" id="bookCount">0</span></button>
+      <button class="tab" data-view="vocab">單字本 <span class="count" id="vocabCount">0</span></button>
+    </div>
+    <div class="tools">
+      <button class="icon-btn" id="openPanel" title="閱讀設定" aria-label="閱讀設定" style="font-family: var(--ff-read); font-weight:600;">Aa</button>
+      <button class="icon-btn" id="themeBtn" title="夜間模式" aria-label="切換夜間模式"></button>
+    </div>
+  </nav>
+</header>
+
+<main>
+  <!-- 閱讀 -->
+  <section class="view active" id="view-read">
+    <div class="reader-wrap">
+      <div class="reader-meta" id="readerMeta"></div>
+      <article id="reader"></article>
+    </div>
+  </section>
+
+  <!-- 書架（含匯入） -->
+  <section class="view" id="view-shelf">
+    <div class="shelf-wrap">
+      <div class="row">
+        <div class="grow">
+          <h2>我的書架</h2>
+          <div class="hint" id="shelfStat"></div>
+        </div>
+        <button class="btn primary" id="toggleImport">＋ 匯入新書</button>
+      </div>
+
+      <div class="import-box" id="importBox" hidden>
+        <input class="field" id="bookTitle" placeholder="書名（例如：科技新聞、小說第一章）" maxlength="60">
+        <textarea id="importText" placeholder="把英文文字貼在這裡，或直接把 .txt 檔拖曳進來…&#10;PDF 的內容可以先複製文字再貼上。"></textarea>
+        <div class="row">
+          <button class="btn small" id="uploadBtn">上傳 .txt 檔</button>
+          <button class="btn small" id="sampleBtn">放入範例故事</button>
+          <span class="hint grow" id="charCount">0 字元</span>
+          <button class="btn small" id="cancelImport">取消</button>
+          <button class="btn primary" id="startBtn">加入書架並開始閱讀</button>
+        </div>
+        <input type="file" id="fileInput" accept=".txt,text/plain">
+      </div>
+
+      <div id="bookList" style="margin-top:16px"></div>
+    </div>
+  </section>
+
+  <!-- 單字本 -->
+  <section class="view" id="view-vocab">
+    <div class="vocab-wrap">
+      <h2>我的單字本</h2>
+      <div class="hint" id="vocabStat"></div>
+      <div class="vocab-top">
+        <select class="select" id="bookFilter" aria-label="依書籍篩選"></select>
+        <div class="filters">
+          <button class="filter active" data-f="all">全部</button>
+          <button class="filter" data-f="todo">未記住</button>
+          <button class="filter" data-f="done">已記住</button>
+        </div>
+        <span class="grow"></span>
+        <button class="btn primary" id="quizBtn">開始測驗</button>
+      </div>
+      <div id="vocabList"></div>
+    </div>
+  </section>
+</main>
+
+<!-- 查字小視窗 -->
+<div id="pop" role="dialog" aria-label="單字查詢"></div>
+
+<!-- 設定面板 -->
+<aside id="panel" aria-label="閱讀設定">
+  <h3>閱讀設定 <button class="icon-btn" id="closePanel" aria-label="關閉">✕</button></h3>
+  <div class="set-row">
+    <div class="name">字體大小</div>
+    <div class="seg" id="segSize"></div>
+  </div>
+  <div class="set-row">
+    <div class="name">行距</div>
+    <div class="seg" id="segLh"></div>
+  </div>
+  <div class="set-row">
+    <div class="name">字體</div>
+    <div class="seg" id="segFont">
+      <button data-v="serif" class="serif">襯線（書本感）</button>
+      <button data-v="sans">無襯線（清晰）</button>
+    </div>
+  </div>
+  <div class="set-row">
+    <div class="name">外觀</div>
+    <div class="seg" id="segTheme">
+      <button data-v="light">白天</button>
+      <button data-v="dark">夜間</button>
+    </div>
+  </div>
+</aside>
+
+<!-- 測驗 -->
+<div class="modal-bg" id="quizBg"><div class="modal" id="quiz"></div></div>
+
+<div id="toast"></div>
+
+<script>
+/* ==========================================================
+   WordTap 點字讀 v2 —— 功能編號對應規格書 F1–F16
+   ========================================================== */
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+/* ---------- 小量資料：localStorage（單字本、設定、暫存） ---------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+
+/* ---------- 書籍：IndexedDB（容量大，可放多本小說） ---------- */
+const DB = {
+  db: null,
+  mem: new Map(), // IndexedDB 無法使用時（例如部分無痕模式）改存在記憶體
+  async open() {
+    try {
+      this.db = await new Promise((res, rej) => {
+        const r = indexedDB.open('wordtap', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('books', { keyPath: 'id' });
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      });
+    } catch (e) { this.db = null; }
+  },
+  req(r) { return new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+  os(mode) { return this.db.transaction('books', mode).objectStore('books'); },
+  async all() { return this.db ? this.req(this.os('readonly').getAll()) : [...this.mem.values()]; },
+  async put(b) { if (!this.db) { this.mem.set(b.id, b); return; } try { await this.req(this.os('readwrite').put(b)); } catch (e) { toast('儲存失敗，瀏覽器空間可能不足'); } },
+  async del(id) { if (!this.db) { this.mem.delete(id); return; } await this.req(this.os('readwrite').delete(id)); },
+};
+
+/* ---------- F3 預設範例：原創短篇故事 ---------- */
+const SAMPLE_TITLE = 'The Last Light on Willow Hill';
+const SAMPLE = `The Last Light on Willow Hill
+
+Mira had lived on Willow Hill for eleven years, and every evening she watched the old lantern in the window of the empty house across the road. Nobody lived there anymore. Still, at exactly seven o'clock, a soft yellow light appeared, flickered twice, and disappeared.
+
+Her brother laughed whenever she mentioned it. "It's just a reflection," he said, without looking up from his phone. But Mira was patient, and she was curious. One windy night in October, she decided to find out the truth.
+
+She wrapped a scarf around her neck, grabbed a flashlight, and crossed the road. The gate creaked like an old man complaining about the weather. Dry leaves whispered under her feet. When she pushed the front door, it opened easily, as if someone had been expecting her.
+
+Inside, the house smelled of dust and cinnamon. On a small wooden table near the window sat a brass lantern, a box of matches, and a notebook with a faded blue cover. Mira opened it carefully. The pages were filled with neat handwriting.
+
+"To whoever finds this," the first page said, "I lit this lantern every night so the children on the hill would never feel alone in the dark. If you are reading this, perhaps it is your turn."
+
+Mira looked at the clock on the wall. It was one minute to seven. Her hands were trembling, but she struck a match and held it to the wick. The flame grew steady and warm.
+
+Across the road, in her own bedroom window, she could see her brother staring back at her, his mouth wide open.
+
+For the first time in years, Mira smiled at the dark.`;
+
+/* ---------- 狀態 ---------- */
+const SIZES = [16, 19, 22, 26], SIZE_NAMES = ['小', '中', '大', '特大'];
+const LHS = [1.5, 1.85, 2.2], LH_NAMES = ['緊', '適中', '寬鬆'];
+
+const state = {
+  books: [],
+  currentId: store.get('wt_current', null),
+  vocab: store.get('wt_vocab', []),
+  settings: Object.assign({ size: 1, lh: 1, font: 'serif', dark: false }, store.get('wt_settings', {})),
+  cache: store.get('wt_cache2', {}),
+  view: 'read',
+  filter: 'all',
+  vocabBook: 'all',
+};
+const currentBook = () => state.books.find(b => b.id === state.currentId) || null;
+const bookById = id => state.books.find(b => b.id === id);
+const saveVocab = () => { store.set('wt_vocab', state.vocab); updateCounts(); };
+const saveSettings = () => store.set('wt_settings', state.settings);
+
+/* ---------- 小工具 ---------- */
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const WORD_RE = /([A-Za-z]+(?:['’][A-Za-z]+)*)/;
+const norm = w => w.toLowerCase().replace(/’/g, "'").replace(/'s$/, '');
+const findVocab = w => state.vocab.find(v => v.word === w);
+const hasCJK = s => /[一-鿿]/.test(s || '');
+const countWords = t => (t.match(/[A-Za-z]+(?:['’][A-Za-z]+)*/g) || []).length;
+const uid = () => 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+const POS_ZH = {
+  noun: '名詞', verb: '動詞', adjective: '形容詞', adverb: '副詞', preposition: '介系詞', conjunction: '連接詞',
+  pronoun: '代名詞', interjection: '感嘆詞', abbreviation: '縮寫', article: '冠詞', prefix: '字首', suffix: '字尾',
+  phrase: '片語', 'auxiliary verb': '助動詞', exclamation: '感嘆詞', determiner: '限定詞', numeral: '數詞',
+  n: '名詞', v: '動詞', adj: '形容詞', adv: '副詞', u: '其他',
+};
+const posZh = p => POS_ZH[(p || '').toLowerCase()] || p || '';
+
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+const ICON_SPEAK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>';
+const ICON_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+const ICON_SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+
+/* ==========================================================
+   閱讀區：把文字切成可點的單字
+   ========================================================== */
+function renderText() {
+  const book = currentBook();
+  if (!book) {
+    $('#readerMeta').innerHTML = '';
+    $('#reader').innerHTML = `<div class="empty">${state.books.length ? '還沒有選擇要讀的書。' : '歡迎使用 WordTap！書架目前是空的。<br>到書架按「＋ 匯入新書」，貼上想讀的英文，<br>或按「放入範例故事」先試試看。'}<br><button class="btn primary" data-go="shelf" style="margin-top:14px">${state.books.length ? '到書架選一本書' : '到書架匯入第一本書'}</button></div>`;
+    return;
+  }
+  const saved = new Set(state.vocab.map(v => v.word));
+  const paras = book.text.replace(/\r\n?/g, '\n').split(/\n+/).map(p => p.trim()).filter(Boolean);
+  let html = '';
+  for (const p of paras) {
+    const parts = p.split(WORD_RE);
+    let h = '';
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2) {
+        const n = norm(parts[i]);
+        h += `<span class="w${saved.has(n) ? ' saved' : ''}" data-w="${esc(n)}">${esc(parts[i])}</span>`;
+      } else {
+        h += esc(parts[i]);
+      }
+    }
+    // 第一段若很短、沒有句號，當作標題顯示
+    const isTitle = !html && p.length <= 80 && !/[.!?。"”]$/.test(p);
+    html += `<p${isTitle ? ' class="title"' : ''}>${h}</p>`;
+  }
+  $('#reader').innerHTML = html;
+  const mins = Math.max(1, Math.round(book.words / 200));
+  $('#readerMeta').innerHTML = `
+    <span class="book">《${esc(book.title)}》</span>
+    <span>約 ${book.words.toLocaleString()} 個英文單字</span>
+    <span>預估閱讀 ${mins} 分鐘</span>
+    <button class="link" data-go="shelf">換一本 →</button>`;
+}
+
+function refreshHighlights() {
+  const saved = new Set(state.vocab.map(v => v.word));
+  $$('#reader .w').forEach(el => el.classList.toggle('saved', saved.has(el.dataset.w)));
+}
+
+document.addEventListener('click', e => {
+  const go = e.target.closest('[data-go]');
+  if (go) switchView(go.dataset.go);
+});
+
+/* ==========================================================
+   F5 查字：中文（依詞性多個意思）＋英文解釋（雙字典）
+   ========================================================== */
+async function fetchJSON(url, ms = 7000) {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: c.signal });
+    if (!r.ok) throw new Error('HTTP' + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
+// 字典常查不到變化形，依序嘗試原形（whispered → whisper）
+function candidates(w) {
+  const c = [w];
+  const add = x => { if (x.length > 1) c.push(x); };
+  if (w.endsWith('ies')) add(w.slice(0, -3) + 'y');
+  if (w.endsWith('ied')) add(w.slice(0, -3) + 'y');
+  if (w.endsWith('es')) add(w.slice(0, -2));
+  if (w.endsWith('s') && !w.endsWith('ss')) add(w.slice(0, -1));
+  if (w.endsWith('ed')) { add(w.slice(0, -2)); add(w.slice(0, -1)); if (/(.)\1ed$/.test(w)) add(w.slice(0, -3)); }
+  if (w.endsWith('ing')) { add(w.slice(0, -3)); add(w.slice(0, -3) + 'e'); if (/(.)\1ing$/.test(w)) add(w.slice(0, -4)); }
+  if (w.endsWith('ly')) add(w.slice(0, -2));
+  return [...new Set(c)].slice(0, 5);
+}
+
+// 英文解釋：① Free Dictionary → ② Datamuse
+async function lookupEn(w) {
+  let netFail = 0;
+  // ① Free Dictionary
+  try {
+    for (const c of candidates(w)) {
+      try {
+        const d = await fetchJSON('https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(c));
+        const e = d[0];
+        const phon = e.phonetic || (e.phonetics || []).map(p => p.text).find(Boolean) || '';
+        const defs = (e.meanings || []).slice(0, 3).map(m => ({ pos: m.partOfSpeech, def: (m.definitions[0] || {}).definition || '' }));
+        if (defs.length) return { head: e.word, phon, defs, src: 'Free Dictionary' };
+      } catch (err) {
+        if (err.message !== 'HTTP404') throw err; // 404 = 查無此形，試下一個
+      }
+    }
+  } catch (err) { netFail++; }
+  // ② Datamuse
+  try {
+    for (const c of candidates(w)) {
+      const d = await fetchJSON('https://api.datamuse.com/words?sp=' + encodeURIComponent(c) + '&md=d&max=1');
+      const e = d && d[0];
+      if (e && e.word.toLowerCase() === c && e.defs && e.defs.length) {
+        const seen = new Set();
+        const defs = [];
+        for (const raw of e.defs) {
+          const [pos, def] = raw.split('\t');
+          if (seen.has(pos) && defs.length >= 2) continue;
+          seen.add(pos);
+          defs.push({ pos: { n: 'noun', v: 'verb', adj: 'adjective', adv: 'adverb' }[pos] || pos, def });
+          if (defs.length >= 3) break;
+        }
+        return { head: e.word, phon: '', defs, src: 'Datamuse' };
+      }
+    }
+  } catch (err) { netFail++; }
+  return { notFound: true, net: netFail === 2 };
+}
+
+// 中文：① Google 字典模式（依詞性多個意思）→ ② MyMemory → ③ 畫面顯示 Google 翻譯連結
+async function lookupZh(w) {
+  let netFail = 0;
+  try {
+    const d = await fetchJSON('https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-TW&dt=t&dt=bd&q=' + encodeURIComponent(w));
+    const main = (d[0] || []).map(x => x[0]).join('');
+    const groups = (d[1] || []).map(g => ({ pos: g[0], terms: (g[1] || []).slice(0, 6) })).filter(g => g.terms.length);
+    if (groups.length || hasCJK(main)) {
+      return { main: hasCJK(main) ? main : groups[0].terms[0], groups, src: 'Google' };
+    }
+  } catch (e) { netFail++; }
+  try {
+    const d = await fetchJSON('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(w) + '&langpair=en|zh-TW');
+    const t = d && d.responseData && d.responseData.translatedText;
+    if (d.responseStatus == 200 && hasCJK(t) && !/MYMEMORY/i.test(t)) return { main: t, groups: [], src: 'MyMemory' };
+  } catch (e) { netFail++; }
+  return { notFound: true, net: netFail === 2 };
+}
+
+async function lookupWord(w) {
+  if (state.cache[w]) return state.cache[w];
+  const [en, zh] = await Promise.all([lookupEn(w), lookupZh(w)]);
+  const res = { en, zh };
+  if (!en.notFound || !zh.notFound) {
+    state.cache[w] = res;
+    const keys = Object.keys(state.cache);
+    if (keys.length > 600) delete state.cache[keys[0]];
+    store.set('wt_cache2', state.cache);
+  }
+  return res;
+}
+
+/* ==========================================================
+   F6 依前後文推測：翻譯整句，比對候選意思
+   ========================================================== */
+const sentCache = new Map();
+async function translateSentence(s) {
+  if (sentCache.has(s)) return sentCache.get(s);
+  let out = '';
+  try {
+    const d = await fetchJSON('https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-TW&dt=t&q=' + encodeURIComponent(s));
+    out = (d[0] || []).map(x => x[0]).join('');
+  } catch (e) {}
+  if (!hasCJK(out) && s.length <= 480) {
+    try {
+      const d = await fetchJSON('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(s) + '&langpair=en|zh-TW');
+      const t = d && d.responseData && d.responseData.translatedText;
+      if (hasCJK(t) && !/MYMEMORY/i.test(t)) out = t;
+    } catch (e) {}
+  }
+  out = hasCJK(out) ? out : '';
+  if (out) sentCache.set(s, out);
+  return out;
+}
+
+// 找出單字所在的句子
+function sentenceOf(el) {
+  const p = el.closest('p');
+  const full = p.textContent;
+  let off = 0;
+  for (const n of p.childNodes) { if (n === el) break; off += n.textContent.length; }
+  const re = /[^.!?]+(?:[.!?]+["'”’)\]]*|$)/g;
+  let m;
+  while ((m = re.exec(full))) {
+    if (off >= m.index && off < m.index + m[0].length) return m[0].trim().slice(0, 400);
+  }
+  return full.slice(0, 400);
+}
+
+// 候選意思中，出現在整句翻譯裡的就是「單字可能的意思」（取最長的詞，避免單字誤判）
+function guessMeaning(zh, sentZh) {
+  if (!sentZh || !zh || zh.notFound) return null;
+  let best = null;
+  for (const g of zh.groups) {
+    for (const t of g.terms) {
+      if (!t || !sentZh.includes(t)) continue;
+      if (!best || t.length > best.term.length) best = { term: t, pos: g.pos };
+    }
+  }
+  if (!best && zh.main && sentZh.includes(zh.main)) best = { term: zh.main, pos: (zh.groups[0] || {}).pos || '' };
+  return best;
+}
+
+/* ---------- 小視窗 ---------- */
+let pop = null; // { w, el, sentence, data, sentZh, sentDone, token }
+let popToken = 0;
+
+function openPop(el) {
+  if (pop && pop.el) pop.el.classList.remove('current');
+  const w = el.dataset.w;
+  const token = ++popToken;
+  pop = { w, el, sentence: sentenceOf(el), data: state.cache[w] || null, sentZh: '', sentDone: false, token };
+  el.classList.add('current');
+  $('#pop').classList.add('show');
+  drawPop();
+  placePop();
+  if (!pop.data) lookupWord(w).then(res => { if (pop && pop.token === token) { pop.data = res; drawPop(); placePop(); } });
+  translateSentence(pop.sentence).then(s => { if (pop && pop.token === token) { pop.sentZh = s; pop.sentDone = true; drawPop(); placePop(); } });
+}
+
+function placePop() {
+  const box = $('#pop');
+  if (!pop || window.innerWidth <= 640) return; // 手機版用底部滑出
+  const r = pop.el.getBoundingClientRect();
+  const pw = box.offsetWidth, ph = box.offsetHeight;
+  let left = r.left + window.scrollX + r.width / 2 - pw / 2;
+  left = Math.max(12 + window.scrollX, Math.min(left, window.scrollX + window.innerWidth - pw - 12));
+  let top = r.bottom + window.scrollY + 8;
+  if (r.bottom + ph + 16 > window.innerHeight && r.top - ph - 8 > 60) top = r.top + window.scrollY - ph - 8;
+  box.style.left = left + 'px';
+  box.style.top = top + 'px';
+}
+
+const gtLink = w => `https://translate.google.com/?sl=en&tl=zh-TW&text=${encodeURIComponent(w)}&op=translate`;
+function markWord(sentence, w) {
+  const safe = esc(sentence);
+  const re = new RegExp(`\\b(${w.replace(/'/g, "['’]")}(?:'s|’s)?)\\b`, 'i');
+  return safe.replace(re, '<mark>$1</mark>');
+}
+
+function drawPop() {
+  const { w, data, sentZh, sentDone } = pop;
+  const saved = !!findVocab(w);
+  const zh = data && data.zh, en = data && data.en;
+  const guess = data && sentDone ? guessMeaning(zh, sentZh) : null;
+  const offline = data && zh.notFound && en.notFound && (zh.net || en.net || !navigator.onLine);
+
+  // 本句可能的意思
+  let guessHtml = '';
+  if (!data || !sentDone) guessHtml = '<div class="loading">分析句子中</div>';
+  else if (guess) guessHtml = `<div class="guess-main">${esc(guess.term)}${guess.pos ? `<span class="src">${esc(posZh(guess.pos))}</span>` : ''}</div><div class="guess-note">依整句翻譯推測，僅供參考</div>`;
+  else if (!sentZh) guessHtml = '<div class="hint">整句翻譯失敗，無法判斷。</div>';
+  else guessHtml = '<div class="hint">無法判斷，請參考下方整句翻譯。</div>';
+
+  // 中文意思（依詞性分組）
+  let zhHtml;
+  if (!data) zhHtml = '<div class="loading">查詢中</div>';
+  else if (offline) zhHtml = '<div class="err">連線失敗，請檢查網路後再試一次。</div>';
+  else if (zh.notFound) zhHtml = `<div class="hint">查無中文意思。</div><a class="small-link" href="${gtLink(w)}" target="_blank" rel="noopener">到 Google 翻譯查看 →</a>`;
+  else {
+    let groups = zh.groups.length ? [...zh.groups] : [{ pos: '', terms: [zh.main] }];
+    if (guess) groups.sort((a, b) => (b.terms.includes(guess.term)) - (a.terms.includes(guess.term)));
+    zhHtml = groups.map(g => `<div class="mean">${g.pos ? `<span class="pos">${esc(posZh(g.pos))}</span>` : ''}${g.terms.map(t => guess && t === guess.term ? `<b>${esc(t)}</b>` : esc(t)).join('、')}</div>`).join('')
+      + `<div class="src" style="margin:4px 0 0">來源：${zh.src}・<a class="small-link" style="font-size:11px" href="${gtLink(w)}" target="_blank" rel="noopener">Google 翻譯</a></div>`;
+  }
+
+  // 英文解釋
+  let enHtml, phon = '';
+  if (!data) enHtml = '<div class="loading">查詢中</div>';
+  else if (offline) enHtml = '<div class="err">連線失敗。</div>';
+  else if (en.notFound) enHtml = `<div class="hint">${en.net ? '英文字典連線失敗，請稍後再試。' : '兩個字典都查無此字的英文解釋。'}</div>`;
+  else {
+    phon = en.phon;
+    enHtml = (en.head.toLowerCase() !== w ? `<div class="hint" style="font-size:12px">原形：${esc(en.head)}</div>` : '')
+      + en.defs.map(x => `<div class="def"><i>${esc(posZh(x.pos))}</i>${esc(x.def)}</div>`).join('')
+      + `<div class="src" style="margin:4px 0 0">來源：${en.src}</div>`;
+  }
+
+  // 整句
+  const sentHtml = `<div class="sent">${markWord(pop.sentence, w)}</div>`
+    + (!sentDone ? '<div class="loading sent-zh">翻譯中</div>' : sentZh ? `<div class="sent-zh">${esc(sentZh)}</div>` : '');
+
+  $('#pop').innerHTML = `
+    <div class="pop-head">
+      <div><div class="pop-word">${esc(w)}</div><div class="pop-phon">${esc(phon)}</div></div>
+      <span class="spacer"></span>
+      <button class="icon-btn" data-act="speak" title="發音" aria-label="發音">${ICON_SPEAK}</button>
+      <button class="icon-btn" data-act="close" title="關閉" aria-label="關閉">✕</button>
+    </div>
+    <div class="pop-sec guess"><span class="label">單字可能的意思</span>${guessHtml}</div>
+    <div class="pop-sec"><span class="label">中文意思</span>${zhHtml}</div>
+    <div class="pop-sec"><span class="label">整句翻譯</span>${sentHtml}</div>
+    <div class="pop-sec"><span class="label">英文解釋</span><div class="pop-en">${enHtml}</div></div>
+    <div class="pop-actions">
+      ${saved
+        ? `<button class="btn" data-act="remove">✓ 已在單字本（點此移除）</button>`
+        : `<button class="btn primary" data-act="add" ${data && sentDone ? '' : 'disabled'}>＋ 加入單字本</button>`}
+    </div>`;
+}
+
+function closePop() {
+  $('#pop').classList.remove('show');
+  if (pop && pop.el) pop.el.classList.remove('current');
+  pop = null; popToken++;
+}
+
+$('#pop').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b || !pop) return;
+  const act = b.dataset.act;
+  if (act === 'close') return closePop();
+  if (act === 'speak') speak(pop.w);
+  if (act === 'add') addVocab();
+  if (act === 'remove') removeVocab(pop.w);
+  if (act === 'add' || act === 'remove') drawPop();
+});
+
+$('#reader').addEventListener('click', e => {
+  const el = e.target.closest('.w');
+  if (el) { e.stopPropagation(); openPop(el); }
+});
+document.addEventListener('click', e => {
+  if ($('#pop').classList.contains('show') && !e.target.closest('#pop') && !e.target.closest('.w')) closePop();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closePop(); closePanel(); closeQuiz(); }
+});
+window.addEventListener('resize', placePop);
+
+/* ==========================================================
+   F7 發音（瀏覽器內建語音）
+   ========================================================== */
+function speak(w) {
+  if (!('speechSynthesis' in window)) { toast('這個瀏覽器不支援發音功能'); return; }
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(w);
+  u.lang = 'en-US';
+  u.rate = 0.9;
+  const v = speechSynthesis.getVoices().find(v => /^en[-_]US/i.test(v.lang));
+  if (v) u.voice = v;
+  speechSynthesis.speak(u);
+}
+if ('speechSynthesis' in window) speechSynthesis.getVoices();
+
+/* ==========================================================
+   F8–F11 單字本
+   ========================================================== */
+function addVocab() {
+  const { w, data, sentZh, sentence } = pop;
+  if (findVocab(w)) return;
+  const zh = data.zh, en = data.en;
+  const guess = guessMeaning(zh, sentZh);
+  const firstGroup = zh.groups && zh.groups[0];
+  const book = currentBook();
+  state.vocab.unshift({
+    word: w,
+    zh: guess ? guess.term : (zh.notFound ? '' : zh.main),
+    pos: guess ? guess.pos : (firstGroup ? firstGroup.pos : (en.defs ? en.defs[0].pos : '')),
+    others: zh.notFound ? [] : zh.groups.slice(0, 3).map(g => ({ pos: g.pos, terms: g.terms.slice(0, 4) })),
+    en: en.notFound ? '' : `(${posZh(en.defs[0].pos)}) ${en.defs[0].def}`,
+    sentence,
+    sentZh,
+    bookId: book ? book.id : null,
+    bookTitle: book ? book.title : '',
+    done: false,
+    t: Date.now(),
+  });
+  saveVocab();
+  refreshHighlights();
+  toast(`已把「${w}」加入單字本`);
+}
+
+function removeVocab(w) {
+  state.vocab = state.vocab.filter(v => v.word !== w);
+  saveVocab();
+  refreshHighlights();
+  toast(`已從單字本移除「${w}」`);
+}
+
+function updateCounts() {
+  $('#vocabCount').textContent = state.vocab.length;
+  $('#bookCount').textContent = state.books.length;
+}
+
+function vocabInScope() {
+  if (state.vocabBook === 'all') return state.vocab;
+  if (state.vocabBook === '_none') return state.vocab.filter(v => !v.bookId || !bookById(v.bookId));
+  return state.vocab.filter(v => v.bookId === state.vocabBook);
+}
+
+function renderBookFilter() {
+  const orphan = state.vocab.filter(v => !v.bookId || !bookById(v.bookId)).length;
+  let opts = `<option value="all">全部書籍（${state.vocab.length}）</option>`;
+  for (const b of state.books) {
+    const n = state.vocab.filter(v => v.bookId === b.id).length;
+    opts += `<option value="${b.id}">《${esc(b.title)}》（${n}）</option>`;
+  }
+  if (orphan) opts += `<option value="_none">已刪除的書／未記錄（${orphan}）</option>`;
+  const sel = $('#bookFilter');
+  sel.innerHTML = opts;
+  if (![...sel.options].some(o => o.value === state.vocabBook)) state.vocabBook = 'all';
+  sel.value = state.vocabBook;
+}
+
+function renderVocab() {
+  renderBookFilter();
+  const scope = vocabInScope();
+  const done = scope.filter(v => v.done).length;
+  $('#vocabStat').textContent = scope.length
+    ? `共 ${scope.length} 個單字，已記住 ${done} 個，還有 ${scope.length - done} 個要加油`
+    : '';
+  $$('.filter').forEach(b => b.classList.toggle('active', b.dataset.f === state.filter));
+  $('#quizBtn').textContent = state.vocabBook === 'all' ? '測驗全部單字' : '測驗這本書';
+  const list = scope.filter(v => state.filter === 'all' || (state.filter === 'done' ? v.done : !v.done));
+  if (!state.vocab.length) {
+    $('#vocabList').innerHTML = '<div class="empty">單字本是空的。<br>到「閱讀」點單字，按「加入單字本」就會出現在這裡。</div>';
+    return;
+  }
+  if (!list.length) {
+    $('#vocabList').innerHTML = `<div class="empty">${!scope.length ? '這本書還沒有收藏的單字。' : state.filter === 'done' ? '還沒有標記為已記住的單字。' : '全部都記住了，太厲害了！'}</div>`;
+    return;
+  }
+  $('#vocabList').innerHTML = list.map(v => {
+    const others = (v.others || []).map(g => `${posZh(g.pos)}：${g.terms.join('、')}`).join('｜');
+    const book = v.bookId && bookById(v.bookId);
+    const from = book ? `出自《${esc(book.title)}》` : v.bookTitle ? `出自《${esc(v.bookTitle)}》（已刪除的書）` : '';
+    return `
+    <div class="card ${v.done ? 'done' : ''}" data-w="${esc(v.word)}">
+      <div class="card-main">
+        <div class="card-word">${esc(v.word)}
+          <button class="icon-btn" data-act="speak" aria-label="發音">${ICON_SPEAK}</button></div>
+        <div class="card-zh">${v.pos ? `<span class="pos">${esc(posZh(v.pos))}</span>` : ''}${v.zh ? esc(v.zh) : `<a class="small-link" href="${gtLink(v.word)}" target="_blank" rel="noopener">查看中文 →</a>`}</div>
+        ${others ? `<div class="card-other">其他意思：${esc(others)}</div>` : ''}
+        ${v.en ? `<div class="card-en">${esc(v.en)}</div>` : ''}
+        ${v.sentence ? `<div class="card-sent"><div class="sent">${markWord(v.sentence, v.word)}</div>${v.sentZh ? `<div class="sent-zh hint">${esc(v.sentZh)}</div>` : ''}</div>` : ''}
+        ${from ? `<div class="card-from">${from}</div>` : ''}
+      </div>
+      <div class="card-side">
+        <label class="check"><input type="checkbox" data-act="done" ${v.done ? 'checked' : ''}> 已記住</label>
+        <button class="del" data-act="del">刪除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+$('#vocabList').addEventListener('click', e => {
+  const card = e.target.closest('.card');
+  const b = e.target.closest('[data-act]');
+  if (!card || !b) return;
+  const w = card.dataset.w;
+  if (b.dataset.act === 'speak') speak(w);
+  if (b.dataset.act === 'del') { removeVocab(w); renderVocab(); }
+});
+$('#vocabList').addEventListener('change', e => {
+  if (e.target.dataset.act !== 'done') return;
+  const v = findVocab(e.target.closest('.card').dataset.w);
+  v.done = e.target.checked;
+  saveVocab();
+  if (v.done) toast(`「${v.word}」標記為已記住`);
+  renderVocab();
+});
+$$('.filter').forEach(b => b.addEventListener('click', () => { state.filter = b.dataset.f; renderVocab(); }));
+$('#bookFilter').addEventListener('change', e => { state.vocabBook = e.target.value; renderVocab(); });
+
+/* ==========================================================
+   F12 小測驗（看英文選中文，範圍＝目前選的書）
+   ========================================================== */
+let quiz = null;
+const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+function quizPool() {
+  const seen = new Set();
+  return vocabInScope().filter(v => v.zh && !seen.has(v.zh) && seen.add(v.zh));
+}
+const scopeLabel = () => state.vocabBook === 'all' ? '全部書籍' : $('#bookFilter').selectedOptions[0].text.replace(/（\d+）$/, '');
+
+// 第一步：設定題數（1–100，且不超過可出題的單字數）
+function openQuizSetup() {
+  const pool = quizPool();
+  const scopeName = scopeLabel();
+  if (pool.length < 4) {
+    toast(`「${scopeName}」至少要 4 個有中文意思的單字才能出四選一的題目（目前 ${pool.length} 個）`);
+    return;
+  }
+  const max = Math.min(100, pool.length);
+  const def = Math.min(max, state.settings.quizN || 10);
+  quiz = null;
+  $('#quiz').innerHTML = `
+    <div class="hint">測驗設定・範圍：${esc(scopeName)}</div>
+    <h2 style="margin:6px 0 4px">要測幾個單字？</h2>
+    <div class="hint">這個範圍有 ${pool.length} 個單字可以出題，可輸入 1–${max} 題。</div>
+    <div class="row" style="margin:18px 0 10px">
+      <input class="field" id="quizN" type="number" min="1" max="${max}" value="${def}" style="width:110px;font-size:20px;text-align:center">
+      <span class="hint">題</span>
+    </div>
+    <div class="row">
+      ${[5, 10, 20].filter(n => n < max).map(n => `<button class="btn small" data-n="${n}">${n} 題</button>`).join('')}
+      <button class="btn small" data-n="${max}">全部（${max} 題）</button>
+    </div>
+    <div class="quiz-foot" style="margin-top:22px">
+      <button class="btn" data-q="close">取消</button>
+      <button class="btn primary" data-q="start">開始測驗</button>
+    </div>`;
+  $('#quizBg').classList.add('show');
+  $('#quizN').focus();
+}
+
+function startQuiz() {
+  const pool = quizPool();
+  const input = $('#quizN');
+  const max = Math.min(100, pool.length);
+  let n = Math.round(Number(input.value));
+  if (!n || n < 1 || n > max) {
+    toast(`請輸入 1 到 ${max} 之間的數字`);
+    input.value = Math.min(max, Math.max(1, n || 1));
+    return;
+  }
+  state.settings.quizN = n; saveSettings();
+  startQuizWith(pool, n);
+}
+
+function startQuizWith(pool, n) {
+  const qs = shuffle(pool).slice(0, n).map(v => {
+    const wrong = shuffle(pool.filter(x => x.zh !== v.zh)).slice(0, 3).map(x => x.zh);
+    return { word: v.word, answer: v.zh, options: shuffle([v.zh, ...wrong]) };
+  });
+  quiz = { qs, i: 0, score: 0, answered: false, missed: [], scopeName: scopeLabel(), n };
+  drawQuiz();
+}
+
+function drawQuiz() {
+  const { qs, i } = quiz;
+  if (i >= qs.length) {
+    const pct = quiz.score / qs.length;
+    const msg = pct === 1 ? '全對！太強了' : pct >= .6 ? '不錯喔，再複習一下就全對了！' : '多看幾次就會記住，加油！';
+    $('#quiz').innerHTML = `
+      <div class="result">
+        <div class="hint">測驗結果・${esc(quiz.scopeName)}</div>
+        <div class="big">${quiz.score} / ${qs.length}</div>
+        <p>${msg}</p>
+        ${quiz.missed.length ? `<p class="hint">答錯的字：${quiz.missed.map(esc).join('、')}</p>` : ''}
+      </div>
+      <div class="quiz-foot">
+        <button class="btn" data-q="close">關閉</button>
+        <button class="btn" data-q="setup">改題數</button>
+        <button class="btn primary" data-q="again">再測一次</button>
+      </div>`;
+    return;
+  }
+  const q = qs[i];
+  $('#quiz').innerHTML = `
+    <div class="quiz-top"><span>範圍：${esc(quiz.scopeName)}</span><span>第 ${i + 1} / ${qs.length} 題・答對 <b id="qScore">${quiz.score}</b></span></div>
+    <div class="quiz-bar"><div style="width:${(i / qs.length) * 100}%"></div></div>
+    <div class="quiz-word">${esc(q.word)} <button class="icon-btn" data-q="speak" aria-label="發音">${ICON_SPEAK}</button></div>
+    <div class="quiz-q">這個單字的中文意思是？</div>
+    ${q.options.map((o, k) => `<button class="opt" data-opt="${k}">${String.fromCharCode(65 + k)}. ${esc(o)}</button>`).join('')}
+    <div class="quiz-foot">
+      <button class="btn" data-q="close">結束測驗</button>
+      <button class="btn primary" data-q="next" disabled>${i === qs.length - 1 ? '看結果' : '下一題'}</button>
+    </div>`;
+}
+
+$('#quiz').addEventListener('click', e => {
+  const opt = e.target.closest('.opt');
+  const b = e.target.closest('[data-q]');
+  const nb = e.target.closest('[data-n]');
+  if (nb) { $('#quizN').value = nb.dataset.n; return; }
+  if (opt && quiz && !quiz.answered) {
+    const q = quiz.qs[quiz.i];
+    const pick = q.options[+opt.dataset.opt];
+    quiz.answered = true;
+    if (pick === q.answer) quiz.score++; else quiz.missed.push(q.word);
+    $$('.opt').forEach(o => {
+      o.disabled = true;
+      const val = q.options[+o.dataset.opt];
+      if (val === q.answer) o.classList.add('right');
+      else if (o === opt) o.classList.add('wrong');
+    });
+    $('[data-q="next"]').disabled = false;
+    $('#qScore').textContent = quiz.score;
+  }
+  if (!b) return;
+  if (b.dataset.q === 'start') return startQuiz();
+  if (b.dataset.q === 'speak') speak(quiz.qs[quiz.i].word);
+  if (b.dataset.q === 'next') { quiz.i++; quiz.answered = false; drawQuiz(); }
+  if (b.dataset.q === 'close') closeQuiz();
+  if (b.dataset.q === 'again') startQuizWith(quizPool(), quiz.n);
+  if (b.dataset.q === 'setup') openQuizSetup();
+});
+$('#quizBg').addEventListener('click', e => { if (e.target.id === 'quizBg') closeQuiz(); });
+function closeQuiz() { $('#quizBg').classList.remove('show'); quiz = null; }
+$('#quizBtn').addEventListener('click', openQuizSetup);
+$('#quiz').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'quizN') startQuiz(); });
+
+/* ==========================================================
+   F1–F4 書架與匯入
+   ========================================================== */
+function renderShelf() {
+  const books = [...state.books].sort((a, b) => (b.opened || 0) - (a.opened || 0));
+  $('#shelfStat').textContent = books.length ? `共 ${books.length} 本書` : '';
+  if (!books.length) {
+    $('#bookList').innerHTML = '<div class="empty">書架是空的，按「＋ 匯入新書」加入第一本吧。</div>';
+    return;
+  }
+  $('#bookList').innerHTML = books.map(b => {
+    const pct = Math.round((b.pos || 0) * 100);
+    const cur = b.id === state.currentId;
+    const n = state.vocab.filter(v => v.bookId === b.id).length;
+    const first = (b.title.match(/[A-Za-z0-9一-鿿]/) || ['?'])[0].toUpperCase();
+    return `
+    <div class="book ${cur ? 'current' : ''}" data-id="${b.id}">
+      <div class="book-cover">${esc(first)}</div>
+      <div class="book-main">
+        <div class="book-title">${esc(b.title)}</div>
+        <div class="book-meta">${cur ? '<span class="badge" style="margin:0 6px 0 0">閱讀中</span>' : ''}約 ${b.words.toLocaleString()} 字・已讀 ${pct}%・收藏 ${n} 個單字</div>
+        <div class="mini-bar"><div style="width:${pct}%"></div></div>
+      </div>
+      <div class="book-actions">
+        <button class="btn small primary" data-b="open">${pct > 0 ? '繼續閱讀' : '開始閱讀'}</button>
+        <button class="btn small" data-b="rename">改名</button>
+        <button class="btn small danger" data-b="del">刪除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+$('#bookList').addEventListener('click', async e => {
+  const b = e.target.closest('[data-b]');
+  if (!b) return;
+  const book = bookById(b.closest('.book').dataset.id);
+  if (b.dataset.b === 'open') openBook(book.id);
+  if (b.dataset.b === 'rename') {
+    const t = prompt('新的書名：', book.title);
+    if (t && t.trim()) { book.title = t.trim().slice(0, 60); await DB.put(book); renderShelf(); renderText(); toast('已改名'); }
+  }
+  if (b.dataset.b === 'del') {
+    if (!confirm(`確定要刪除《${book.title}》嗎？\n（收藏的單字會保留在單字本）`)) return;
+    await DB.del(book.id);
+    state.books = state.books.filter(x => x.id !== book.id);
+    if (state.currentId === book.id) { state.currentId = null; store.set('wt_current', null); renderText(); }
+    updateCounts();
+    renderShelf();
+    toast(`已刪除《${book.title}》`);
+  }
+});
+
+function openBook(id) {
+  const book = bookById(id);
+  if (!book) return;
+  state.currentId = id;
+  store.set('wt_current', id);
+  book.opened = Date.now();
+  DB.put(book);
+  renderText();
+  switchView('read');
+}
+
+async function addBook(title, text, silent) {
+  const book = { id: uid(), title, text, words: countWords(text), pos: 0, created: Date.now(), opened: Date.now() };
+  state.books.push(book);
+  await DB.put(book);
+  updateCounts();
+  if (!silent) toast(`《${title}》已加入書架`);
+  return book;
+}
+
+const importText = $('#importText');
+const updateCharCount = () => { $('#charCount').textContent = `${importText.value.length.toLocaleString()} 字元`; };
+importText.addEventListener('input', updateCharCount);
+
+function showImport(show) {
+  $('#importBox').hidden = !show;
+  $('#toggleImport').hidden = show;
+  if (show) $('#bookTitle').focus();
+}
+$('#toggleImport').addEventListener('click', () => showImport(true));
+$('#cancelImport').addEventListener('click', () => { showImport(false); importText.value = ''; $('#bookTitle').value = ''; updateCharCount(); });
+
+$('#startBtn').addEventListener('click', async () => {
+  const t = importText.value.trim();
+  if (!t) { toast('請先貼上文字或上傳 .txt 檔'); return; }
+  if (!/[A-Za-z]{2,}/.test(t)) { toast('沒有找到英文單字，請確認內容是英文'); return; }
+  let title = $('#bookTitle').value.trim();
+  if (!title) title = t.split('\n')[0].trim().slice(0, 40) || '未命名';
+  const book = await addBook(title.slice(0, 60), t);
+  importText.value = ''; $('#bookTitle').value = ''; updateCharCount();
+  showImport(false);
+  openBook(book.id);
+  window.scrollTo(0, 0);
+});
+
+$('#sampleBtn').addEventListener('click', () => { importText.value = SAMPLE; $('#bookTitle').value = SAMPLE_TITLE; updateCharCount(); });
+$('#uploadBtn').addEventListener('click', () => $('#fileInput').click());
+$('#fileInput').addEventListener('change', e => { readFile(e.target.files[0]); e.target.value = ''; });
+
+function readFile(f) {
+  if (!f) return;
+  if (!/\.txt$/i.test(f.name) && f.type !== 'text/plain') {
+    toast(/\.pdf$/i.test(f.name) ? '不支援 PDF，請把 PDF 的文字複製後貼上' : '只支援 .txt 檔');
+    return;
+  }
+  const r = new FileReader();
+  r.onload = () => {
+    importText.value = r.result;
+    if (!$('#bookTitle').value.trim()) $('#bookTitle').value = f.name.replace(/\.txt$/i, '');
+    updateCharCount();
+    toast(`已讀取「${f.name}」，按「加入書架並開始閱讀」即可`);
+  };
+  r.onerror = () => toast('讀取檔案失敗，請再試一次');
+  r.readAsText(f, 'UTF-8');
+}
+importText.addEventListener('dragover', e => { e.preventDefault(); importText.classList.add('drop'); });
+importText.addEventListener('dragleave', () => importText.classList.remove('drop'));
+importText.addEventListener('drop', e => {
+  if (!e.dataTransfer.files.length) return;
+  e.preventDefault();
+  importText.classList.remove('drop');
+  readFile(e.dataTransfer.files[0]);
+});
+
+/* ==========================================================
+   F13–F16 閱讀設定、夜間模式
+   ========================================================== */
+function buildSeg(id, names, key) {
+  $(id).innerHTML = names.map((n, i) => `<button data-v="${i}">${n}</button>`).join('');
+  $(id).addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    state.settings[key] = +b.dataset.v; applySettings(); saveSettings();
+  });
+}
+buildSeg('#segSize', SIZE_NAMES, 'size');
+buildSeg('#segLh', LH_NAMES, 'lh');
+$('#segFont').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  state.settings.font = b.dataset.v; applySettings(); saveSettings();
+});
+$('#segTheme').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  state.settings.dark = b.dataset.v === 'dark'; applySettings(); saveSettings();
+});
+$('#themeBtn').addEventListener('click', () => {
+  state.settings.dark = !state.settings.dark; applySettings(); saveSettings();
+  toast(state.settings.dark ? '已切換到夜間模式' : '已切換到白天模式');
+});
+
+function applySettings() {
+  const s = state.settings;
+  const root = document.documentElement;
+  root.style.setProperty('--fs', SIZES[s.size] + 'px');
+  root.style.setProperty('--lh', LHS[s.lh]);
+  root.dataset.theme = s.dark ? 'dark' : 'light';
+  $('#reader').classList.toggle('sans', s.font === 'sans');
+  $$('#segSize button').forEach(b => b.classList.toggle('active', +b.dataset.v === s.size));
+  $$('#segLh button').forEach(b => b.classList.toggle('active', +b.dataset.v === s.lh));
+  $$('#segFont button').forEach(b => b.classList.toggle('active', b.dataset.v === s.font));
+  $$('#segTheme button').forEach(b => b.classList.toggle('active', (b.dataset.v === 'dark') === s.dark));
+  $('#themeBtn').innerHTML = s.dark ? ICON_SUN : ICON_MOON;
+  $('#themeBtn').title = s.dark ? '切換到白天模式' : '切換到夜間模式';
+  placePop();
+  updateProgress();
+}
+
+function openPanel() { closePop(); $('#panel').classList.add('show'); }
+function closePanel() { $('#panel').classList.remove('show'); }
+$('#openPanel').addEventListener('click', e => { e.stopPropagation(); $('#panel').classList.contains('show') ? closePanel() : openPanel(); });
+$('#closePanel').addEventListener('click', closePanel);
+document.addEventListener('click', e => {
+  if ($('#panel').classList.contains('show') && !e.target.closest('#panel') && !e.target.closest('#openPanel')) closePanel();
+});
+
+/* ---------- F16 進度條＋每本書記住閱讀位置 ---------- */
+function scrollRatio() {
+  const max = document.documentElement.scrollHeight - window.innerHeight;
+  return max > 0 ? Math.min(1, window.scrollY / max) : 1;
+}
+function updateProgress() {
+  $('#progress').style.width = state.view === 'read' && currentBook() ? (scrollRatio() * 100) + '%' : '0';
+}
+let posTimer;
+window.addEventListener('scroll', () => {
+  updateProgress();
+  const book = currentBook();
+  if (state.view !== 'read' || !book) return;
+  clearTimeout(posTimer);
+  posTimer = setTimeout(() => {
+    book.pos = scrollRatio();
+    DB.put(book);
+  }, 400);
+}, { passive: true });
+
+function restorePosition() {
+  const book = currentBook();
+  const max = document.documentElement.scrollHeight - window.innerHeight;
+  window.scrollTo(0, book ? Math.round((book.pos || 0) * max) : 0);
+  updateProgress();
+}
+
+/* ==========================================================
+   分頁切換
+   ========================================================== */
+function switchView(v) {
+  closePop();
+  state.view = v;
+  $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === v));
+  $$('.view').forEach(s => s.classList.toggle('active', s.id === 'view-' + v));
+  if (v === 'read') requestAnimationFrame(restorePosition);
+  else window.scrollTo(0, 0);
+  if (v === 'vocab') renderVocab();
+  if (v === 'shelf') { renderShelf(); if (!state.books.length) showImport(true); }
+  updateProgress();
+}
+$$('.tab').forEach(t => t.addEventListener('click', () => switchView(t.dataset.view)));
+
+/* ==========================================================
+   啟動
+   ========================================================== */
+(async function init() {
+  applySettings();
+  await DB.open();
+  state.books = await DB.all();
+  // 第一次使用 v2：把 v1 匯入的文章搬進書架（書架預設是空的，讓使用者自己從匯入開始操作）
+  if (!store.get('wt_init', false)) {
+    const old = store.get('wt_text', null);
+    if (!state.books.length && old && old !== SAMPLE) {
+      const b = await addBook('我的匯入（v1）', old, true);
+      b.pos = store.get('wt_pos', 0) || 0;
+      await DB.put(b);
+      state.currentId = b.id;
+      store.set('wt_current', b.id);
+    }
+    store.set('wt_init', true);
+  }
+  if (!currentBook() && state.books.length) {
+    state.currentId = [...state.books].sort((a, b) => (b.opened || 0) - (a.opened || 0))[0].id;
+    store.set('wt_current', state.currentId);
+  }
+  renderText();
+  updateCounts();
+  // 等字型載入完成、版面高度穩定後再回到上次位置
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => requestAnimationFrame(restorePosition));
+})();
+</script>
+</body>
+</html>
